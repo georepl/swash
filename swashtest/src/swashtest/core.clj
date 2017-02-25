@@ -4,9 +4,6 @@
             [swash.core :as swash]))
 
 
-(defn upper [x]
-  (float (/ 100 (int (+ (* 100 x) 1)))))
-
 (defn abs[x] (Math/abs x))
 
 (defn minmax [[a b] x]
@@ -14,10 +11,9 @@
 
 (defn scale [curve x-units y-units]
   ;; scaling a profile
-(prn "CURVE: " (count curve) "SCALE: " (first (last curve))(first (first curve)))
-  (let [dx (upper (/ (- (first (last curve))(first (first curve))) x-units))
+  (let [dx (/ x-units (- (first (last curve))(first (first curve))))
         [y0 yn] (reduce minmax [0.0 0.0] (map second curve))
-        dy (upper (/ (- yn y0) y-units))]
+        dy (/ y-units (- yn y0))]
     (map (fn [[x y]][(* x dx)(* y dy)]) curve)))
 
 (defn mindist [[[x1 y1 t1][x2 y2 t2]]]
