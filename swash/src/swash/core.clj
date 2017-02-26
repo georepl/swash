@@ -28,8 +28,7 @@
 (defn curvature [t0 [x1 y1 t1][x2 y2 t2][x3 y3 t3]]
   (let [u [(- x2 x1)(- y2 y1)]
         v [(- x3 x2)(- y3 y2)]
-        w [(- x3 x1)(- y3 y1)]
-        len (length w)]
+        len (+ (length [(- x2 x1)(- y2 y1)])(length [(- x3 x2)(- y3 y2)]))]
     (if (zero? len)
       nil
       [(- t2 t0) (/ (acos (dot-product (norm u)(norm v))) len)])))
