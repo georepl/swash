@@ -6,20 +6,20 @@
 
 (defn abs[x] (Math/abs x))
 
+(def colours [[0 0 0]       ;black
+              [0 250 0]     ;green
+              [250 0 0]     ;red
+              [125 125 0]   ;olive
+              [255 200 0]   ;yellow
+              [0 125 125]   ;turquoise
+              [255 127 0]   ;orange
+              [0 0 250]     ;blue
+              [125 125 125] ;gray
+             ])
+
 (defn colour [mode]
-  (let [col  (* (mod mode 15) 17)]
-    (q/stroke col col col)))
-
-(defn minmax [[a b] x]
-  [(if (< x a) x a) (if (> x b) x b)])
-
-(defn scale [curve x-units y-units]
-  ;; scaling a profile
-  (let [x0 (first (first curve))
-        dx (/ x-units (- (first (last curve)) x0))
-        [y0 yn] (reduce minmax [0.0 0.0] (map second curve))
-        dy (/ y-units (- yn y0))]
-    (map (fn [[x y]][(* (- x x0) dx)(* y dy)]) curve)))
+  (let [idx (mod mode (count colours))]
+    (apply q/stroke (nth colours idx))))
 
 (defn mindist [[[x1 y1 t1][x2 y2 t2]]]
   (>= (abs (- t2 t1)) 3))
@@ -30,8 +30,8 @@
     (map first (filter mindist (map list col (rest col))))))
 
 
-;;===================
-
+;;======================
+;; drawing primitives
 
 (defn draw-text [x y s]
   (q/text s x y))
@@ -43,6 +43,16 @@
   (doseq [[p q] (map list points (rest points))]
     (draw-line p q)))
 
+(defn draw-button [button]
+  (draw-line [(:x1 button) (:y1 button)][(:x2 button) (:y1 button)])
+  (draw-line [(:x2 button) (:y1 button)][(:x2 button) (:y2 button)])
+  (draw-line [(:x2 button) (:y2 button)][(:x1 button) (:y2 button)])
+  (draw-line [(:x1 button) (:y2 button)][(:x1 button) (:y1 button)])
+  (q/fill 200)
+  (q/rect (:x1 button)(:y1 button)(- (:x2 button)(:x1 button)) (- (:y2 button)(:y1 button)))
+  (q/fill 0 0 0)
+  (draw-text (+ (:x1 button) 10) (+ (:y1 button) 15) (:s button)))
+
 (defn draw-coordinates [caption x0 y0 dx dy]
   (draw-line [x0 y0][(+ x0 dx) y0])
   (draw-line [x0 y0][x0 (- y0 dy)])
@@ -52,18 +62,40 @@
 (defn draw-in-coordinates [trace x0 y0 dx dy]
   (draw-trace (map (fn[[x y]] [(+ x0 x)(- y0 y)]) trace)))
 
+(defn process [state]
+  (let [coll (cleanup (reverse (:trace state)))]
+    (if (> (count coll) 3)
+      (let [vp (swash/scale (swash/velocity-profile coll) 700 50)
+            cp (swash/scale (swash/curvature-profile coll) 700 50)]
+        (assoc state :trace '() :velocity-profile vp :curvature-profile cp :analyzed true))
+      (assoc state :trace '()))))
 
-;;===================
 
+;;(def bOk { :x1 410 :x2 510 :y1 750 :y2 790 :s "Analyze" })
+;;(def bReset { :x1 290 :x2 390 :y1 750 :y2 790 :s "Reset" })
+(def bReset { :x1 320 :x2 390 :y1 770 :y2 790 :s " Reset " })
+(def bOk { :x1 410 :x2 480 :y1 770 :y2 790 :s "Analyze" })
 
-(defn setup-state []
+;;======================
+;; Quil framework
+
+(defn inbox [x y button]
+  (and (> x (:x1 button))(< x (:x2 button))(> y (:y1 button))(< y (:y2 button))))
+
+(defn setup []
+  (q/clear)
   (q/frame-rate 30)
   (q/background 240)
   (q/fill 0 0 0)
+  (draw-button bOk)
+  (draw-button bReset)
   (draw-coordinates "writing speed (t)" 50 100 700 50)
   (draw-coordinates "curvature (t)" 50 200 700 50)
-  (colour 1)
-  { :trace '() :velocity-profile [] :curvature-profile [] :colour 1 })
+  (q/stroke 0 0 0)
+  { :trace '() :velocity-profile [] :curvature-profile [] :colour 1 :analyzed false })
+
+(defn setup-state []
+  (setup))
 
 (defn update-state [state]
   state)
@@ -72,22 +104,25 @@
   ;; draw coordinate system for velocity profile
   (draw-in-coordinates (:velocity-profile state) 50 100 700 50)
   (draw-in-coordinates (:curvature-profile state) 50 200 700 50)
-  (draw-trace (:trace state))
-  )
+  (draw-trace (:trace state)))
 
 (defn mouse-dragged [state event]
   (let [t (System/currentTimeMillis)]
     (update state :trace (partial cons [(:x event)(:y event) t]))))
 
+(defn mouse-pressed[state event]
+  (if (:analyzed state)
+    (let [newcol (inc (:colour state))]
+      (colour newcol)
+      (assoc state :colour newcol :analyzed false))
+    state))
+
 (defn mouse-released [state event]
-  (let [coll (cleanup (reverse (:trace state)))]
-    (if (> (count coll) 3)
-      (let [vp (scale (swash/velocity-profile coll) 700 50)
-            cp (scale (swash/curvature-profile coll) 700 50)
-            newcol (inc (:colour state))]
-          (colour newcol)
-          (assoc state :trace '() :velocity-profile vp :curvature-profile cp :colour newcol))
-      (assoc state :trace '()))))
+  (if (inbox (:x event)(:y event) bOk)
+    (process state)
+    (if (inbox (:x event)(:y event) bReset)
+      (setup)
+      state)))
 
 (q/defsketch swashtest
   :title "testing swash"
@@ -96,6 +131,7 @@
   :update update-state
   :draw draw-state
   :mouse-dragged mouse-dragged
+  :mouse-pressed mouse-pressed
   :mouse-released mouse-released
   :middleware [m/fun-mode])
 

@@ -20,6 +20,21 @@
       [0.0 0.0]
       [(/ x len)(/ y len)])))
 
+;===================================
+
+(defn minmax [[a b] x]
+  [(if (< x a) x a) (if (> x b) x b)])
+
+(defn scale [curve x-units y-units]
+  ;; scaling a profile
+  (let [x0 (first (first curve))
+        dx (/ x-units (- (first (last curve)) x0))
+        [y0 yn] (reduce minmax [0.0 0.0] (map second curve))
+        dy (/ y-units (- yn y0))]
+    (map (fn [[x y]][(* (- x x0) dx)(* y dy)]) curve)))
+
+
+;===================================
 
 
 (defn velocity [[x1 y1 t1][x2 y2 t2]]
@@ -35,7 +50,9 @@
 
 
 
+;===================================
 ;; swash API
+
 (defn velocity-profile [trace]
   ;; creating the velocity profile
   (map #(velocity %1 %2) trace (rest trace)))
