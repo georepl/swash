@@ -37,8 +37,8 @@
 ;===================================
 
 
-(defn velocity [[x1 y1 t1][x2 y2 t2]]
-  [t1 (/ (sqrt (+ (square (- x2 x1))(square (- y2 y1)))) (- t2 t1))])
+(defn velocity [t0 [x1 y1 t1][x2 y2 t2]]
+  [(- t1 t0) (/ (sqrt (+ (square (- x2 x1))(square (- y2 y1)))) (- t2 t1))])
 
 (defn curvature [t0 [x1 y1 t1][x2 y2 t2][x3 y3 t3]]
   (let [u [(- x2 x1)(- y2 y1)]
@@ -53,17 +53,24 @@
 ;===================================
 ;; swash API
 
+
+;; take a vector of velocity profiles and return a similar structure
+;; with the t coordinates adjusted so the result gives a new valid profile
 (defn velocity-profile [trace]
-  ;; creating the velocity profile
-  (map #(velocity %1 %2) trace (rest trace)))
+  (if (coll? (first (first trace)))
+    (map (fn[c](map #(velocity (last (first (first trace))) %1 %2) c (rest c))) trace)
+    (let [t0 (last (first trace))]
+      (map #(velocity t0 %1 %2) trace (rest trace)))))
 
+
+;; take a vector of curvature profiles and return a similar structure
+;; with the t coordinates adjusted so the result gives a new valid profile
 (defn curvature-profile [trace]
-  ;; creating the curvature profile
-  (let [t0 (last (first trace))]
-    (filter #(not (nil? %))
-            (map #(curvature t0 %1 %2 %3) trace (rest trace) (rest (rest trace))))))
-
-
+  (if (coll? (first (first trace)))
+    (map (fn[c](map #(curvature (last (first (first trace))) %1 %2 %3) c (rest c) (rest (rest c)))) trace)
+    (let [t0 (last (first trace))]
+      (filter #(not (nil? %))
+              (map #(curvature t0 %1 %2 %3) trace (rest trace) (rest (rest trace)))))))
 
 
 (defn define [name trace]

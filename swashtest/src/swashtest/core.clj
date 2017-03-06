@@ -24,9 +24,8 @@
 (defn mindist [[[x1 y1 t1][x2 y2 t2]]]
   (>= (abs (- t2 t1)) 3))
 
-(defn cleanup [coll]
-  (let [t0 (last (first coll))
-        col (map (fn [[x y t]][x y (- t t0)]) coll)]
+(defn cleanup [t0 coll]
+  (let [col (map (fn [[x y t]][x y (- t t0)]) coll)]
     (map first (filter mindist (map list col (rest col))))))
 
 
@@ -60,19 +59,37 @@
   (draw-text (+ x0 dx -10) (+ y0 10) "t"))
 
 (defn draw-in-coordinates [trace x0 y0 dx dy]
-  (draw-trace (map (fn[[x y]] [(+ x0 x)(- y0 y)]) trace)))
+  (when (not (empty? trace))
+    (if (coll? (first (first trace)))
+      (map #(draw-in-coordinates % x0 y0 dx dy) trace)
+      (let [tr (map (fn[[x y]] [(+ x0 x)(- y0 y)]) trace)]
+        (draw-trace tr)))))
+
+(defn draw-vertical-bars [x-coll x1 y1 dy]
+  (when (and (not (empty? x-coll))(pos? (first x-coll)))
+    (doseq [x x-coll]
+      (draw-line [(+ x1 x) y1][(+ x1 x)(- y1 dy)]))))
+
+(defn process-segment [tracecoll]
+  (let [t0 (last (first (first tracecoll)))
+        c1 (map (partial cleanup t0) tracecoll)
+        coll (filter #(> (count %) 2) c1)]
+    (if (not (empty? coll))
+      (let [vp (swash/scale (swash/velocity-profile (apply concat coll)) 700 50)
+            cp (swash/scale (swash/curvature-profile (apply concat coll)) 700 50)
+            x-bars (map (comp last first) coll)]
+        [vp cp x-bars])
+      [nil nil nil])))
 
 (defn process [state]
-  (let [coll (cleanup (reverse (:trace state)))]
-    (if (> (count coll) 3)
-      (let [vp (swash/scale (swash/velocity-profile coll) 700 50)
-            cp (swash/scale (swash/curvature-profile coll) 700 50)]
-        (assoc state :trace '() :velocity-profile vp :curvature-profile cp :analyzed true))
-      (assoc state :trace '()))))
+  (let [retcoll (process-segment (:tracecoll state))
+        vp (first retcoll)
+        cp (second retcoll)
+        x-bars (last retcoll)]
+    (if (= vp cp nil)
+      (assoc state :trace '() :tracecoll nil :velocity-profile nil :curvature-profile nil :vert nil :analyzed false)
+      (assoc state :trace '() :tracecoll nil :velocity-profile vp :curvature-profile cp :vert x-bars :analyzed true))))
 
-
-;;(def bOk { :x1 410 :x2 510 :y1 750 :y2 790 :s "Analyze" })
-;;(def bReset { :x1 290 :x2 390 :y1 750 :y2 790 :s "Reset" })
 (def bReset { :x1 320 :x2 390 :y1 770 :y2 790 :s " Reset " })
 (def bOk { :x1 410 :x2 480 :y1 770 :y2 790 :s "Analyze" })
 
@@ -92,7 +109,7 @@
   (draw-coordinates "writing speed (t)" 50 100 700 50)
   (draw-coordinates "curvature (t)" 50 200 700 50)
   (q/stroke 0 0 0)
-  { :trace '() :velocity-profile [] :curvature-profile [] :colour 1 :analyzed false })
+  { :trace '() :tracecoll nil :velocity-profile [] :curvature-profile [] :colour 1 :analyzed false })
 
 (defn setup-state []
   (setup))
@@ -101,10 +118,17 @@
   state)
 
 (defn draw-state [state]
-  ;; draw coordinate system for velocity profile
-  (draw-in-coordinates (:velocity-profile state) 50 100 700 50)
-  (draw-in-coordinates (:curvature-profile state) 50 200 700 50)
-  (draw-trace (:trace state)))
+  (if (:analyzed state)
+    (do
+      (draw-in-coordinates (:velocity-profile state) 50 100 700 50)
+      (draw-in-coordinates (:curvature-profile state) 50 200 700 50)
+      (draw-vertical-bars (:vert state) 50 100 40)
+      (draw-vertical-bars (:vert state) 50 200 40)
+      (draw-trace (:trace state))
+      (assoc state :analyzed false))
+    (do
+      (draw-trace (:trace state))
+      state)))
 
 (defn mouse-dragged [state event]
   (let [t (System/currentTimeMillis)]
@@ -117,12 +141,13 @@
       (assoc state :colour newcol :analyzed false))
     state))
 
+
 (defn mouse-released [state event]
   (if (inbox (:x event)(:y event) bOk)
-    (process state)
+    (process (assoc state :tracecoll (reverse (map reverse (:tracecoll state)))))
     (if (inbox (:x event)(:y event) bReset)
       (setup)
-      state)))
+      (assoc state :trace '() :tracecoll (cons (:trace state) (:tracecoll state))))))
 
 (q/defsketch swashtest
   :title "testing swash"
