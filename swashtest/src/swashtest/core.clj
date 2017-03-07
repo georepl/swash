@@ -9,9 +9,9 @@
 (def colours [[0 0 0]       ;black
               [0 250 0]     ;green
               [250 0 0]     ;red
-              [125 125 0]   ;olive
               [255 200 0]   ;yellow
               [0 125 125]   ;turquoise
+              [125 125 0]   ;olive
               [255 127 0]   ;orange
               [0 0 250]     ;blue
               [125 125 125] ;gray
@@ -65,8 +65,18 @@
       (let [tr (map (fn[[x y]] [(+ x0 x)(- y0 y)]) trace)]
         (draw-trace tr)))))
 
+(defn scale-x-axis [dx coll]
+  (if (or (empty? coll) (zero? dx))
+    (empty coll)
+    (let [d (- (last coll)(first coll))]
+      (if (zero? d)
+        (empty coll)
+        (let [fac (/ dx d)]
+          (map (partial * fac) coll))))))
+
 (defn draw-vertical-bars [x-coll x1 y1 dy]
-  (when (and (not (empty? x-coll))(pos? (first x-coll)))
+  (if (or (empty? x-coll)(neg? (first x-coll)))
+    nil
     (doseq [x x-coll]
       (draw-line [(+ x1 x) y1][(+ x1 x)(- y1 dy)]))))
 
@@ -77,7 +87,7 @@
     (if (not (empty? coll))
       (let [vp (swash/scale (swash/velocity-profile (apply concat coll)) 700 50)
             cp (swash/scale (swash/curvature-profile (apply concat coll)) 700 50)
-            x-bars (map (comp last first) coll)]
+            x-bars (scale-x-axis 700 (map (comp last last) coll))]
         [vp cp x-bars])
       [nil nil nil])))
 
