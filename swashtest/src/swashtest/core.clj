@@ -24,6 +24,7 @@
 (defn mindist [[[x1 y1 t1][x2 y2 t2]]]
   (>= (abs (- t2 t1)) 3))
 
+;; transform the trace so the t coordinates start with 0
 (defn cleanup [t0 coll]
   (let [col (map (fn [[x y t]][x y (- t t0)]) coll)]
     (map first (filter mindist (map list col (rest col))))))
@@ -31,6 +32,14 @@
 
 ;;======================
 ;; drawing primitives
+
+(defn height []
+  (let [h (q/height)]
+    (if (zero? h) 800 h)))
+
+(defn width []
+  (let [w (q/width)]
+    (if (zero? w) 800 w)))
 
 (defn draw-text [x y s]
   (q/text s x y))
@@ -83,10 +92,11 @@
 (defn process-segment [tracecoll]
   (let [t0 (last (first (first tracecoll)))
         c1 (map (partial cleanup t0) tracecoll)
-        coll (filter #(> (count %) 2) c1)]
+        coll (filter #(> (count %) 2) c1)
+        w (q/width)]
     (if (not (empty? coll))
-      (let [vp (swash/scale (swash/velocity-profile (apply concat coll)) 700 50)
-            cp (swash/scale (swash/curvature-profile (apply concat coll)) 700 50)
+      (let [vp (swash/scale (swash/velocity-profile (apply concat coll)) (- w 100) 50)
+            cp (swash/scale (swash/curvature-profile (apply concat coll)) (- w 100) 50)
             x-bars (scale-x-axis 700 (map (comp last last) coll))]
         [vp cp x-bars])
       [nil nil nil])))
@@ -100,8 +110,20 @@
       (assoc state :trace '() :tracecoll nil :velocity-profile nil :curvature-profile nil :vert nil :analyzed false)
       (assoc state :trace '() :tracecoll nil :velocity-profile vp :curvature-profile cp :vert x-bars :analyzed true))))
 
-(def bReset { :x1 320 :x2 390 :y1 770 :y2 790 :s " Reset " })
-(def bOk { :x1 410 :x2 480 :y1 770 :y2 790 :s "Analyze" })
+(defn bReset []
+  (let [h (height)
+        w (/ (width) 2)]
+    { :x1 (- w 80) :x2 (- w 10) :y1 (- h 30) :y2 (- h 10) :s " Reset " }))
+
+(defn bOk []
+  (let [h (height)
+        w (/ (width) 2)]
+    { :x1 (+ w 10) :x2 (+ w 80) :y1 (- h 30) :y2 (- h 10) :s "   Set" }))
+
+(defn bSaveShape []
+  (let [h (height)
+        w (/ (width) 2)]
+    { :x1 (+ w 100) :x2 (+ w 180) :y1 (- h 30) :y2 (- h 10) :s "Analyze" }))
 
 ;;======================
 ;; Quil framework
@@ -110,16 +132,18 @@
   (and (> x (:x1 button))(< x (:x2 button))(> y (:y1 button))(< y (:y2 button))))
 
 (defn setup []
-  (q/clear)
-  (q/frame-rate 30)
-  (q/background 240)
-  (q/fill 0 0 0)
-  (draw-button bOk)
-  (draw-button bReset)
-  (draw-coordinates "writing speed (t)" 50 100 700 50)
-  (draw-coordinates "curvature (t)" 50 200 700 50)
-  (q/stroke 0 0 0)
-  { :trace '() :tracecoll nil :velocity-profile [] :curvature-profile [] :colour 1 :analyzed false })
+  (let [w (width)]
+    (q/clear)
+    (q/frame-rate 30)
+    (q/background 240)
+    (q/fill 0 0 0)
+    (draw-button (bReset))
+    (draw-button (bOk))
+    (draw-button (bSaveShape))
+    (draw-coordinates "writing speed (t)" 50 100 (- w 100) 50)
+    (draw-coordinates "curvature (t)" 50 200 (- w 100) 50)
+    (q/stroke 0 0 0)
+    { :trace '() :tracecoll nil :velocity-profile [] :curvature-profile [] :colour 1 :analyzed false }))
 
 (defn setup-state []
   (setup))
@@ -129,11 +153,12 @@
 
 (defn draw-state [state]
   (if (:analyzed state)
-    (do
-      (draw-in-coordinates (:velocity-profile state) 50 100 700 50)
-      (draw-in-coordinates (:curvature-profile state) 50 200 700 50)
-      (draw-vertical-bars (:vert state) 50 100 40)
-      (draw-vertical-bars (:vert state) 50 200 40)
+    (let [h (height)
+          w (width)]
+      (draw-in-coordinates (:velocity-profile state) (/ w 16) (/ h 8) (* w 0.7) (/ h 16))
+      (draw-in-coordinates (:curvature-profile state) (/ w 16) (/ h 4) (* w 0.7) (/ h 16))
+      (draw-vertical-bars (:vert state) (/ w 16) (/ h 8) (/ h 20))
+      (draw-vertical-bars (:vert state) (/ w 16) (/ h 4) (/ h 20))
       (draw-trace (:trace state))
       (assoc state :analyzed false))
     (do
@@ -153,23 +178,26 @@
 
 
 (defn mouse-released [state event]
-  (if (inbox (:x event)(:y event) bOk)
+  (if (inbox (:x event)(:y event) (bOk))
     (process (assoc state :tracecoll (reverse (map reverse (:tracecoll state)))))
-    (if (inbox (:x event)(:y event) bReset)
+    (if (inbox (:x event)(:y event) (bReset))
       (setup)
-      (assoc state :trace '() :tracecoll (cons (:trace state) (:tracecoll state))))))
-
-(q/defsketch swashtest
-  :title "testing swash"
-  :size [800 800]
-  :setup setup-state
-  :update update-state
-  :draw draw-state
-  :mouse-dragged mouse-dragged
-  :mouse-pressed mouse-pressed
-  :mouse-released mouse-released
-  :middleware [m/fun-mode])
+;;      (if (inbox (:x event)(:y event) (bSaveShape))
+;;        (process (assoc state :tracecoll (reverse (map reverse (:tracecoll state)))))
+        (assoc state :trace '() :tracecoll (cons (:trace state) (:tracecoll state))))))
 
 
 (defn -main [& args]
-  )
+  (let [dx 800
+        dy 800]
+    (q/defsketch swashtest
+      :title "testing swash"
+      :features [:resizable]
+      :size [dx dy]
+      :setup setup-state
+      :update update-state
+      :draw draw-state
+      :mouse-dragged mouse-dragged
+      :mouse-pressed mouse-pressed
+      :mouse-released mouse-released
+      :middleware [m/fun-mode])))
