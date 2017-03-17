@@ -107,20 +107,37 @@
         cp (second retcoll)
         x-bars (last retcoll)]
     (if (= vp cp nil)
-      (assoc state :trace '() :tracecoll nil :velocity-profile nil :curvature-profile nil :vert nil :analyzed false)
-      (assoc state :trace '() :tracecoll nil :velocity-profile vp :curvature-profile cp :vert x-bars :analyzed true))))
+      (assoc state :trace '() :tracecoll nil :velocity-profile nil :curvature-profile nil :vert nil :analyzed false :shapes nil)
+      (assoc state
+        :trace '()
+        :tracecoll nil
+        :velocity-profile vp
+        :curvature-profile cp
+        :vert x-bars
+        :analyzed true
+        :shapes (conj (:shapes state) (:tracecoll state))))))
+
+
+
+
+(defn analyze-shapes [state tracecoll]
+  (when (> (count (:shapes state)) 1)
+;(prn "COMPARE:" (first (:shapes state)))
+;(prn "WITH:" (second (:shapes state)))
+    (let [res (swash/compare-traces (first (:shapes state)) (second (:shapes state)))]
+      (prn res))))
 
 (defn bReset []
   (let [h (height)
         w (/ (width) 2)]
     { :x1 (- w 80) :x2 (- w 10) :y1 (- h 30) :y2 (- h 10) :s " Reset " }))
 
-(defn bOk []
+(defn bSet []
   (let [h (height)
         w (/ (width) 2)]
     { :x1 (+ w 10) :x2 (+ w 80) :y1 (- h 30) :y2 (- h 10) :s "   Set" }))
 
-(defn bSaveShape []
+(defn bAnalyze []
   (let [h (height)
         w (/ (width) 2)]
     { :x1 (+ w 100) :x2 (+ w 180) :y1 (- h 30) :y2 (- h 10) :s "Analyze" }))
@@ -138,12 +155,12 @@
     (q/background 240)
     (q/fill 0 0 0)
     (draw-button (bReset))
-    (draw-button (bOk))
-    (draw-button (bSaveShape))
+    (draw-button (bSet))
+    (draw-button (bAnalyze))
     (draw-coordinates "writing speed (t)" 50 100 (- w 100) 50)
     (draw-coordinates "curvature (t)" 50 200 (- w 100) 50)
     (q/stroke 0 0 0)
-    { :trace '() :tracecoll nil :velocity-profile [] :curvature-profile [] :colour 1 :analyzed false }))
+    { :trace '() :shapes [] :tracecoll nil :velocity-profile [] :curvature-profile [] :colour 1 :analyzed false }))
 
 (defn setup-state []
   (setup))
@@ -178,13 +195,13 @@
 
 
 (defn mouse-released [state event]
-  (if (inbox (:x event)(:y event) (bOk))
+  (if (inbox (:x event)(:y event) (bSet))
     (process (assoc state :tracecoll (reverse (map reverse (:tracecoll state)))))
     (if (inbox (:x event)(:y event) (bReset))
       (setup)
-;;      (if (inbox (:x event)(:y event) (bSaveShape))
-;;        (process (assoc state :tracecoll (reverse (map reverse (:tracecoll state)))))
-        (assoc state :trace '() :tracecoll (cons (:trace state) (:tracecoll state))))))
+      (if (inbox (:x event)(:y event) (bAnalyze))
+        (analyze-shapes state (reverse (map reverse (:tracecoll state))))
+        (assoc state :trace '() :tracecoll (cons (:trace state) (:tracecoll state)))))))
 
 
 (defn -main [& args]

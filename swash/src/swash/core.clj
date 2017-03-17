@@ -53,26 +53,18 @@
       (map (fn [[x y]][(* x dx)(* y dy)]) curve)))
   ([curve x-units y-units]
     (let [x0 (first (first curve))
-          xn (- (first (last curve)) x0)
+          xn (first (last curve))
           [y0 yn] (reduce minmax [0.0 0.0] (map second curve))]
       (scale curve x-units y-units [x0 xn] [y0 yn]))))
-
-
-;; scaling a trace
-(defn scale-trace-segment [trace x-units y-units]
-  (let [[x0 xn] (reduce minmax [0.0 0.0] (map first trace))
-        [y0 yn] (reduce minmax [0.0 0.0] (map second trace))]
-    (map #(conj (vec %1) %2)
-         (scale (map butlast trace) x-units y-units [x0 xn] [y0 yn])
-         (map last trace))))
 
 
 ;===================================
 
 
-(defn velocity [t0 [x1 y1 t1][x2 y2 t2]]
-  (let [v [(- x2 x1)(- y2 y1)]]
-    [(- t1 t0) (/ (length v) (- t2 t1))]))
+(defn velocity [[vx vy vt][wx wy wt]]
+  [vt
+   (/ (Math/sqrt (+ (square (- vx wx))(square (- vy wy))))
+      (- wt vt))])
 
 (defn curvature [t0 [x1 y1 t1][x2 y2 t2][x3 y3 t3]]
   (let [u [(- x2 x1)(- y2 y1)]
@@ -91,9 +83,8 @@
 ;; with the t coordinates adjusted so the result gives a new valid profile
 (defn velocity-profile [trace]
   (if (coll? (first (first trace)))
-    (map (fn[c](map #(velocity (last (first (first trace))) %1 %2) c (rest c))) trace)
-    (let [t0 (last (first trace))]
-      (map #(velocity t0 %1 %2) trace (rest trace)))))
+    (map (fn[c](map #(velocity %1 %2) c (rest c))) trace)
+    (map #(velocity %1 %2) trace (rest trace))))
 
 
 ;; take a vector of curvature profiles and return a similar structure
@@ -112,12 +103,8 @@
    (curvature-profile trseg)])
 
 ;; scale the profiles of trace segments so they fit into a box of 100 x 100 units
-(defn scale-profiles [trseg]
-  (let [tvc (profiles trseg)
-        tr (first tvc)
-        vp (scale (second tvc) 100 100)
-        cp (scale (last tvc) 100 100)]
-    [tr vp cp]))
+(defn scale-profiles [[tr vp cp]]
+  [tr (scale vp 100 100) (scale cp 100 100)])
 
 ;; merge the profiles of two corresponding trace segments. The result is a list of three dimensional vectors.
 ;; The first coordinate is t, the two others are either nil or the y value of the respective profile, where
@@ -140,6 +127,7 @@
           dt2 (- t2 t0)]
       (abs (float (+ (- a b) (* (divide dt1 dt2) (- c a))))))))
 
+;; prune the list so the result list looks like: '([t1 y1 nil][t2 nil y2][t3 y3 nil][t4 nil y4] ...)
 (defn prune-merged-profiles [mpl]
   (filter (comp not nil?)
           (map (fn [[t1 a1 b1][t2 a2 b2]]
@@ -153,15 +141,17 @@
 ;; (list [t0 y0 nil][t1 nil y1][t2 y2 nil][t3 nil y3] ...)
 (defn compare-profiles [mpl]
   (let [coll (prune-merged-profiles mpl)
-        triplist (map difference coll (rest coll) (nthrest coll 2))
-        reslist (filter (comp not nil?) triplist)]
-    (divide (reduce + reslist) (count reslist))))
+        vallist (map difference coll (rest coll) (nthrest coll 2))]
+;;        reslist (filter (comp not nil?) vallist)]
+    (divide (reduce + vallist) (count vallist))))
 
 
 ;; do the job trace-segment-wise
 (defn compare-trace-segments [trseg1 trseg2]
-  (let [[tr1 vp1 cp1] (scale-profiles trseg1)
-        [tr2 vp2 cp2] (scale-profiles trseg2)]
+  (let [tvc1 (profiles trseg1)
+        tvc2 (profiles trseg2)
+        [tr1 vp1 cp1] (scale-profiles tvc1)
+        [tr2 vp2 cp2] (scale-profiles tvc2)]
     [(compare-profiles (merge-profiles vp1 vp2))
      (compare-profiles (merge-profiles cp1 cp2))]))
 
