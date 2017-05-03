@@ -1,5 +1,6 @@
 (ns swash.core-test
   (:require [clojure.test :refer :all]
+            [swash.core :as swash]
             [swash.core :refer :all]))
 
 
@@ -32,12 +33,11 @@
                   '([100 600 35003][140 700 35003][140 600 35005][100 520 35008][130 410 35010][160 323 35011]
                     [200 350 35014][250 400 35015][360 590 35016][320 620 35017][300 680 35018][300 700 35020])])
 
-(def v-res '([[0 1.0770329614269007] [100 0.5] [300 0.14907119849998599] [900 0.38005847503304596] [1200 0.30675723300355934] [1500 0.04387246731641329]
-              [2600 0.1767766952966369] [3000 0.13721561500062593] [4600 0.02795084971874737] [7000 0.03952847075210474] [8600 0.014285714285714285]]))
+(def v-res '([0 1.0770329614269007] [100 0.5] [300 0.14907119849998599] [900 0.38005847503304596] [1200 0.30675723300355934] [1500 0.04387246731641329]
+             [2600 0.1767766952966369] [3000 0.13721561500062593] [4600 0.02795084971874737] [7000 0.03952847075210474] [8600 0.014285714285714285]))
 
-(def c-res '([0 0.013293415794191354] [100 0.002447429149830173] [300 0.0035874312561082608] [900 3.193853332226898E-4] [1200 0.013062422536793265]
-             [1500 0.0016108936201856838] [2600 8.978376392999903E-4] [3000 0.0020317447355515175] [4600 0.010963904403384194]
-             [7000 0.0038650770874543374]))
+;(def c-res '([0 0] [100 -4000] [300 -3200] [900 2400] [1200 3090] [1500 12700] [2600 17500] [3000 50500] [4600 8400] [7000 19600] [8600 6000]))
+(def c-res '([0 -18400.0] [100 34000.0] [300 15600.0] [900 39300.0] [1200 31710.0] [1500 -9200.0] [2600 -18000.0] [3000 -75600.0] [4600 -0.0] [7000 -43400.0] [8600 -12000.0]))
 
 (def __coll-res ['([0 1.0770329614269007][100 0.5][300 0.14907119849998599][900 0.38005847503304596][1200 0.30675723300355934][1500 0.04387246731641329]
                  [2600 0.1767766952966369] [3000 0.13721561500062593] [4600 0.02795084971874737] [7000 0.03952847075210474] [8600 0.014285714285714285])
@@ -58,12 +58,8 @@
 
 
 
-(def coll-res2 ['([300 600 0] [340 600 2] [340 600 4] [300 520 6] [330 410 7] [360 323 9]
-                  [420 353 11] [450 400 12] [560 590 14] [620 620 1017][600 680 1019] [600 700 1020])
-                '([100 600 0] [140 700 1] [140 600 3] [100 520 9] [130 410 10] [160 323 12]
-                  [200 350 13] [250 400 15] [360 590 16] [320 620 19] [300 680 20] [300 700 21])
-                '([140 700 0] [140 600 2] [100 520 5] [130 410 7] [160 323 8] [200 350 11]
-                  [250 400 12] [360 590 13] [320 620 14] [300 680 15] [300 700 17])])
+(def coll-res2 ['([140 600 3] [360 590 16] [300 700 21])
+                '([140 600 2] [160 323 8] [300 700 17])])
 
 (def curve1 '([0 8.9][3 10][6 8.8][8 5][10 3.5][11 1.48][13 0.7][14 0.0004]))
 
@@ -216,7 +212,13 @@
     (is (= (norm [7 0]) [1.0 0.0]))
     (is (= (norm [0 5.0]) [0.0 1.0]))
     (is (= (- (length (norm [3.0 4.0])) (length [0.6 0.8])) 0.0)))
-    )
+  (testing "divide"
+    (is (= (divide 6 3) 2))
+    (is (= (divide 7 0) nil)))
+  (testing "sign"
+    (is (= (sign 42) 1.0))
+    (is (= (sign -2) -1.0))
+    (is (zero? (sign 0)))))
 
 (deftest helper-functions
   (testing "minmax"
@@ -225,11 +227,11 @@
     (is (= (minmax [-2 -1] 4.0) [-2 4.0]))
     (is (= (minmax [-2 -1] -4.0) [-4.0 -1])))
   (testing "mindist"
-    (let [cl '([2 1 0][6 5 1][8 6 1][9 6 2][4 1 4][7 6 5])]
-      (is (= (map mindist (map list cl (rest cl))) '(true false true true true)))))
+    (let [cl '([2 1 0][6 5 4][8 6 5][9 6 8][4 1 13][7 6 25])]
+      (is (= (map #'swash/mindist (map list cl (rest cl))) '(true false true true true)))))
   (testing "normalize-segment"
-    (is (= (normalize-segment '([2 1 25][6 5 31][8 6 35][9 6 37][4 1 40][7 6 45])) '([2 1 0] [6 5 6] [8 6 10] [9 6 12] [4 1 15][7 6 20])))
-    (is (= (normalize-segment '([2 1 5][6 5 6][8 6 6][9 6 7][4 1 9][7 6 9][6 4 10])) '([2 1 0] [8 6 1] [9 6 2] [7 6 4] [6 4 5])))
+    (is (= (normalize-segment '([2 1 25][6 5 31][8 6 35][9 6 37][4 1 40][7 6 45])) '([2 1 0] [6 5 6] [9 6 12] [4 1 15][7 6 20])))
+    (is (= (normalize-segment '([2 1 5][6 5 6][8 6 6][9 6 7][4 1 9][7 6 9][6 4 10])) '([6 4 5])))
     )
   (testing "normalize"
     (is (= (normalize trace-coll2) coll-res2))
@@ -243,46 +245,30 @@
                                       [19.642857142857142 11.1] [23.214285714285715 5.25] [25.0 0.003])))))
 
 
-(deftest difference-test
-  (is (= (difference [17 nil 5][17 7 nil][42 nil 8]) 2))
-  (is (= (< (- (difference [17 nil 5][19 3 nil][23 nil 10]) 3.6666667) 0.0001)))
-  (is (= (< (- (difference [0 42 nil][34 nil 55][40 60 nil]) 28.3) 0.0001))))
+(deftest squared-difference-test
+  (is (= (reduce + (map squared-difference '([17 6 5][17 7 7][42 8 8]))) 1.0))
+  (is (= (reduce + (map squared-difference '([17 7 5][19 3 4][23 7 10]))) 14.0))
+  (is (= (reduce + (map squared-difference '([0 42 51][34 54 55][40 60 49]))) 203.0)))
 
 (deftest prune-merged-profiles-test
   (is (= (prune-merged-profiles merged-profiles-Didi) pruned-merged-profiles)))
 
-(deftest compare-traces-test
-  (testing "profiles"
-    (is (= (profiles (first trace-Didi-normal1)) profile-Didi1))
-    (is (= (profiles (last trace-Didi-normal2)) profile-Didi2)))
-  (testing "scale-profiles"
-    (is (= (second (scale-profiles (profiles (last trace-Didi-normal1)))) scaled-profiles-Didi1))
-    (is (= (last (scale-profiles (profiles (first trace-Didi-normal2)))) scaled-profiles-Didi2)))
-  (testing "merge-profiles"
-    (is (= (merge-profiles (last trace-Didi-normal1)(last trace-Didi-normal2)) merged-profiles-Didi)))
-  (testing "compare-profiles"
-    (is (= (compare-profiles merged-profiles-Didi) 118.94474792480469)))
-  (testing "compare-trace-segments"
-    (is (= (compare-trace-segments (first trace-Didi1) (first trace-Didi2)) [13.3625219643116 13.858733485431172]))
-    (is (= (compare-trace-segments (second trace-Didi1) (second trace-Didi2)) [nil nil]))
-    (is (= (compare-trace-segments (third trace-Didi1) (third trace-Didi2)) [nil 43.48996569468535]))
-    (is (= (compare-trace-segments (fourth trace-Didi1) (fourth trace-Didi2)) [26.42992381791811 27.6932835686987])))
-  (testing "compare-traces"
-    (is (= (compare-traces trace-Didi1 trace-Didi2) '([13.3625219643116 13.858733485431172] [1.4210854715202004E-14 nil]
-                                                      [10.164673071641188 43.48996569468535] [22.30666512913174 27.6932835686987])))))
 
 (deftest velocity-profile-test
   (testing "scaling of velocity profile of single trace"
     (let [coll (velocity-profile '([[8 9 7][8 6 11][5 2 19][6 2 22]][[1 4 30][7 12 40][4 8 45][4 4 49][1 4 50]]))]
       (is (= ['([[0 (dvd 3 4)][4 (dvd 5 8)][12 (dvd 1 3)]][[23 (dvd 10 10)][33 (dvd 5 5)][38 (dvd 4 4)][42 (dvd 3 1)]])])))
-    (let [coll (velocity-profile (normalize (list trace1)))]
+    (let [trace (normalize-segment trace1)
+          coll (velocity-profile trace)]
       (is (= v-res coll))))
   (testing "concat velocity profiles"
-    (is (= (velocity-profile (normalize trace-coll1))
-           coll-res)))
+    (is (= (velocity-profile (normalize-segment (first trace-coll1))) (first coll-res)))
+    (is (= (velocity-profile (normalize-segment (second trace-coll1))) (second coll-res)))
+    (is (= (velocity-profile (normalize-segment (last trace-coll1))) (last coll-res))))
   (testing "scaling of velocity profile of trace collection"
-    (let [coll (velocity-profile (normalize trace-coll1))]
-      (is (= (sort-by first coll) coll)))))
+    (is (= (sort-by first (velocity-profile (normalize-segment (first trace-coll1)))) (velocity-profile (normalize-segment (first trace-coll1)))))
+    (is (= (sort-by first (velocity-profile (normalize-segment (second trace-coll1)))) (velocity-profile (normalize-segment (second trace-coll1)))))
+    (is (= (sort-by first (velocity-profile (normalize-segment (last trace-coll1)))) (velocity-profile (normalize-segment (last trace-coll1)))))))
 
 
 (deftest curvature-profile-test
@@ -290,8 +276,66 @@
     (let [coll (curvature-profile trace1)]
       (is (= c-res coll))))
   (testing "scaling of curvature profile of trace collection"
-    (let [coll (curvature-profile trace-coll1)]
-      (is (= (sort-by first coll) coll)))))
+    (let [col1 (curvature-profile (first trace-coll1))]
+      (is (= (sort-by first col1) col1)))
+    (let [col2 (curvature-profile (first trace-coll1))]
+      (is (= (sort-by first col2) col2)))
+    (let [col3 (curvature-profile (first trace-coll1))]
+      (is (= (sort-by first col3) col3)))))
+
+
+(deftest extrema-test
+  (let [coll1 [6.055 7.655 9.084 7.402 3.3 3.237 3.441 3.441 3.791 4.814 7.752 11.284 21.249
+               27.654 25.604 20.184 10.299 5.548 10.445 18.053 26.33 50.0 45.475 39.476 48.966]
+        coll2 [3.528 6.338 5.784 4.511 5.941 4.525 2.72 3.572 4.167 3.677 7.456 8.706 10.343 21.097
+               24.06 19.875 17.779 13.691 7.408 4.587 13.61 36.168 34.563 29.648 50.0 38.359 27.036]
+        coll3 [7.103 8.075 6.837 4.707 3.845 2.108 0.615 1.163 3.392 5.636 9.56 17.448 21.476 20.652
+               18.772 16.857 10.074 2.504 4.601 17.751 29.979 33.476 39.664 49.999 40.195 18.26]]
+    (testing "locmin"
+      (is (= (locmin coll1)
+             '(6.055 nil nil nil nil 3.237 nil nil nil nil nil nil nil nil nil nil nil 5.548 nil nil nil nil nil 39.476 nil)))
+      (is (= (locmin coll2)
+             '(3.528 nil nil 4.511 nil nil 2.72 nil nil 3.677 nil nil nil nil nil nil nil nil nil 4.587 nil nil nil 29.648 nil nil 27.036)))
+      (is (= (locmin coll3)
+             '(7.103 nil nil nil nil nil 0.615 nil nil nil nil nil nil nil nil nil nil 2.504 nil nil nil nil nil nil nil 18.26)))
+      )
+    (testing "locmax"
+      (is (= (locmax coll1)
+             '(nil nil 9.084 nil nil nil nil nil nil nil nil nil nil 27.654 nil nil nil nil nil nil nil 50.0 nil nil 48.966)))
+      (is (= (locmax coll2)
+             '(nil 6.338 nil nil 5.941 nil nil nil 4.167 nil nil nil nil nil 24.06 nil nil nil nil nil nil 36.168 nil nil 50.0 nil nil)))
+      (is (= (locmax coll3)
+             '(nil 8.075 nil nil nil nil nil nil nil nil nil nil 21.476 nil nil nil nil nil nil nil nil nil nil 49.999 nil nil))))
+    (testing "mrge"
+      (is (= (mrge '(nil nil nil nil 3.237 nil nil nil nil nil nil nil nil nil nil nil 5.548 nil nil nil nil nil 39.476)
+                   '(nil 9.084 nil nil nil nil nil nil nil nil nil nil 27.654 nil nil nil nil nil nil nil 50.0 nil nil))
+             '(nil 9.084 nil nil 3.237 nil nil nil nil nil nil nil 27.654 nil nil nil 5.548 nil nil nil 50.0 nil 39.476))))
+    (testing "locext"
+      (is (= (locext (map #(vector 0 %) coll1))
+             '(6.055 nil 9.084 nil nil 3.237 nil nil nil nil nil nil nil 27.654 nil nil nil 5.548 nil nil nil 50.0 nil 39.476 48.966))))
+      ))
+
+(deftest prepare-profiles-test
+  (testing "smooth"
+    (is (= (smooth '([0 0][3 4][6 5][8 2][11 6][13 4][15 2][16 1][20 0]))
+           '([1.5 2.0] [4.5 4.5] [7.0 3.5] [9.5 4.0] [12.0 5.0] [14.0 3.0] [15.5 1.5] [18.0 0.5]))))
+  (testing "mindist"
+    (is (true? (#'swash/mindist [[43 22 0][24 36 20]])))
+    (is (false? (#'swash/mindist [[43 22 0][24 36 2]])))
+    (is (true? (#'swash/mindist [[43 22 0][43 22 20]])))))
+
+(deftest interpolate-merged-profiles-test
+  (let [coll1 '([3 5 nil][5 nil 9][7 7 nil][13 nil 9][14 8 nil][17 nil 16])
+        coll2 '([0 1 nil][1 nil 16][4 13 nil][5 nil 8][9 28 nil][12 nil -6])
+        coll3 '([0 nil 18][1 4 nil][4 nil 10][5 16 nil][9 nil 0][12 37 nil])]
+    (testing "interpolate-merged-profiles"
+      (let [ret1 (map swash/interpolate-merged-profiles coll1 (rest coll1)(rest (rest coll1)))]
+        (is (= ret1 [[5 6.0 9] [7 7 9.0] [13 7.857142925262451 9] [14 8 10.75]])))
+      (let [ret2 (map swash/interpolate-merged-profiles coll2 (rest coll2)(rest (rest coll2)))]
+        (is (empty? (filter (partial < 0.001)  (map - (flatten ret2) (flatten [[1 4 16][4 13 10][5 16 8][9 28 0][12 37 -6]]))))))
+      (let [ret3 (map swash/interpolate-merged-profiles coll3 (rest coll3)(rest (rest coll3)))]
+        (is (empty? (filter (partial < 0.001)  (map - (flatten ret3) (flatten [[1 4 16][4 13 10][5 16 8][9 28 0][12 37 -6]]))))))
+      )))
 
 
 (defn beautify [x]
@@ -302,15 +346,4 @@
 (defn beautify2 [[x y]]
   [(beautify x)(beautify y)])
 
-(deftest test-chain
-  (let [c1 (normalize trace-O1)
-        c2 (normalize trace-O2)
-        tvc1 (profiles (first c1))
-        tvc2 (profiles (first c2))
-        [tr1 vp1 cp1] (scale-profiles tvc1)
-        [tr2 vp2 cp2] (scale-profiles tvc2)
-        vp-merged (merge-profiles vp1 vp2)
-        vp-pruned (prune-merged-profiles vp-merged)
-        vp-compared (map difference vp-pruned (rest vp-pruned) (nthrest vp-pruned 2))]
-    (prn "VPCOMPARED: " (map beautify vp-compared))))
 

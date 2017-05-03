@@ -2,7 +2,7 @@
 
 (defn sqrt[x] (Math/sqrt x))
 ;;(defn acos[x] (Math/acos x))
-(defn abs[x] (Math/abs x))
+(defn abs[x] (Math/abs (float x)))
 
 (defn divide [a b]
   (if (zero? b) nil (/ a b)))
@@ -24,14 +24,20 @@
       [0.0 0.0]
       [(float (/ x len))(float (/ y len))])))
 
+(defn sign [x]
+  (if (zero? x)
+    0.0
+    (if (pos? x)
+      1.0
+     -1.0)))
 
 ;===================================
+
+(declare mindist)
 
 (defn minmax [[a b] x]
   [(min a x) (max b x)])
 
-(defn mindist [[[x1 y1 t1][x2 y2 t2]]]
-  (>= (abs (- t2 t1)) 1))
 
 ;; remove consecutive points and transform the trace segment so the t coordinates start with 0
 (defn normalize-segment [traceseg]
@@ -60,51 +66,96 @@
 
 ;===================================
 
+(defn velocity [[x1 y1 t1][x2 y2 t2]]
+  [t1
+   (/ (Math/sqrt (+ (square (- x2 x1))(square (- y2 y1))))
+      (- t2 t1))])
 
-(defn velocity [[vx vy vt][wx wy wt]]
-  [vt
-   (/ (Math/sqrt (+ (square (- vx wx))(square (- vy wy))))
-      (- wt vt))])
-
-(defn curvature [t0 [x1 y1 t1][x2 y2 t2][x3 y3 t3]]
+;; signed curvature. The sign is positive for curves bending in mathematical order
+(defn curvature [[x1 y1 t1][x2 y2 t2][x3 y3 t3]]
   (let [u [(- x2 x1)(- y2 y1)]
-        v [(- x3 x2)(- y3 y2)]
-        len (+ (length u)(length v))]
-    (if (zero? len)
-      [(- t1 t0) 0]
-      [(- t1 t0) (/ (Math/acos (dot-product (norm u)(norm v))) len)])))
+        v [(- x3 x1)(- y3 y1)]]
+    [t2 (* -1.0 (- (* (first u)(second v))(* (second u)(first v))))]))
 
+
+;===================================
+
+(defn locmin-step [y1 y2 y3]
+  (if (and (< y2 y1)(< y2 y3))
+    y2
+    nil))
+
+(defn locmin [coll]
+  (let [p-col1 (cons (+ (first coll) 1) coll)
+        p-col (reverse (cons (+ (last coll) 1) (reverse p-col1)))]
+    (map locmin-step p-col (rest p-col) (rest (rest p-col)))))
+
+(defn locmax-step [y1 y2 y3]
+  (if (and (> y2 y1)(> y2 y3))
+    y2
+    nil))
+
+(defn locmax [coll]
+  (let [p-col1 (reverse (cons (- (last coll) 1) (reverse coll)))
+        p-col (cons (- (first p-col1) 1) p-col1)]
+    (map locmax-step p-col (rest p-col) (rest (rest p-col)))))
+
+(defn mrge [coll1 coll2]
+  (map #(if (not (nil? %1)) %1 (if (not (nil? %2)) %2 nil))
+       coll1
+       coll2))
+
+(defn locext [coll]
+  (let [p-col (map second coll)]
+    (mrge (locmin p-col) (locmax p-col))))
+
+
+(defn smooth [coll]
+  (map (fn [[t1 y1][t2 y2]] [(* (+ t2 t1) 0.5)(* (+ y2 y1) 0.5)]) coll (rest coll)))
+
+(defn extrema-profile [curve]
+  (map #(if (nil? %2) nil (vector (first %1) %2)) curve (locext curve)))
 
 ;===================================
 ;; swash API
 
 
+(def TMIN 3)
+(def DMIN 0)
+
+(defn- mindist [[[x1 y1 t1][x2 y2 t2]]]
+  (>= (abs (- t2 t1)) TMIN))
+
+
+(defn- _mindist [[[x1 y1 t1][x2 y2 t2]]]
+  (and (>= (abs (- t2 t1)) TMIN)
+       (>= (+ (- x2 x1)(- y2 y1)) DMIN)))
+
+;; transform the trace collection so all traces' t coordinates start with 0,
+;; no two trace elements have the same timestamp (guarantee injectivity) and
+;; every trace in the tracecoll has at least three points (minimum for curvature)
+(defn cleanup [t0 coll]
+  (let [col1 (map (fn [[x y t]][x y (- t t0)]) coll)
+        col2 (map first (filter mindist (map list col1 (rest col1))))]
+    (filter #(> (count %) 2) col2)))
+
+;; find the center point of the box around the trace
+(defn box-center [trace]
+  (let [[t0 tn] (reduce minmax [0.0 0.0] (map first trace))
+        [y0 yn] (reduce minmax [0.0 0.0] (map second trace))]
+    (vector (/ (- tn t0) 2)(/ (- yn y0) 2))))
+
 ;; take a vector of velocity profiles and return a similar structure
 ;; with the t coordinates adjusted so the result gives a new valid profile
 (defn velocity-profile [trace]
-  (if (coll? (first (first trace)))
-    (map (fn[c](map #(velocity %1 %2) c (rest c))) trace)
-    (map #(velocity %1 %2) trace (rest trace))))
+  (map #(velocity %1 %2) trace (rest trace)))
 
-
-;; take a vector of curvature profiles and return a similar structure
-;; with the t coordinates adjusted so the result gives a new valid profile
 (defn curvature-profile [trace]
-  (if (coll? (first (first trace)))
-    (map (fn[c](map #(curvature (last (first (first trace))) %1 %2 %3) c (rest c) (rest (rest c)))) trace)
-    (let [t0 (last (first trace))]
-       (map #(curvature t0 %1 %2 %3) trace (rest trace) (rest (rest trace))))))
+  (let [p0 (cons 0 (box-center trace))
+        ret (map #(curvature p0 %1 %2) trace (rest trace))
+        t0 (first (first ret))]
+    (map (fn[[t y]](vector (- t t0) y)) ret)))
 
-
-;; return the initial triplet of the (already normalized) trace segment, velocity, and curvture profiles
-(defn profiles [trseg]
-  [trseg
-   (velocity-profile trseg)
-   (curvature-profile trseg)])
-
-;; scale the profiles of trace segments so they fit into a box of 100 x 100 units
-(defn scale-profiles [[tr vp cp]]
-  [tr (scale vp 100 100) (scale cp 100 100)])
 
 ;; merge the profiles of two corresponding trace segments. The result is a list of three dimensional vectors.
 ;; The first coordinate is t, the two others are either nil or the y value of the respective profile, where
@@ -115,17 +166,26 @@
         col2 (map (fn[[t y]] [t nil y]) pf2)]
         (sort-by first (concat col1 col2))))
 
-(defn difference [[t0 a0 b0][t1 a1 b1][t2 a2 b2]]
-  (if (= t0 t1)
-    (if (not= nil a0 b1)
-      (abs (- a0 b1))
-      (abs (- b0 a1)))
-    (let [[a b c]  (if (not= nil a0 b1 a2)
-                      [a0 b1 a2]
-                      [b0 a1 b2])
-          dt1 (- t1 t0)
-          dt2 (- t2 t0)]
-      (abs (float (+ (- a b) (* (divide dt1 dt2) (- c a))))))))
+;; extract the first or second profile from the merged profiles
+(defn extract [f mpl]
+  (let [coll (map f (partition 2 mpl))]
+    (map #(filter (comp not nil?) %) coll)))
+
+
+;; return the [t1 a1 b1] with its' nil value replaced by the linear interpolation of the
+;; respective values of the next door neighbours
+(defn interpolate-merged-profiles [[t0 a0 b0][t1 a1 b1][t2 a2 b2]]
+  (let [d (/ (- t1 t0)(- t2 t0))]
+    (if (nil? b1)
+      [t1 a1 (float (+ b0 (* (- b2 b0) d)))]
+      [t1 (float (+ a0 (* (- a2 a0) d))) b1])))
+
+
+;; return the squared difference of the arguments' y-values.
+;; argument types p, q: [t y1 y2]
+;; return: the squared diff of y1 y2
+(defn squared-difference [[t y1 y2]]
+  (square (- y2 y1)))
 
 ;; prune the list so the result list looks like: '([t1 y1 nil][t2 nil y2][t3 y3 nil][t4 nil y4] ...)
 (defn prune-merged-profiles [mpl]
@@ -136,42 +196,10 @@
                    [t1 a1 b1]))
                mpl (rest mpl))))
 
-;; input list format (merged profiles list): (list [t (or nil y)(or y nil)])
-;; We remove vectors from the list so vectors originating from the two original traces alternate like this:
-;; (list [t0 y0 nil][t1 nil y1][t2 y2 nil][t3 nil y3] ...)
-(defn compare-profiles [mpl]
-  (let [coll (prune-merged-profiles mpl)
-        vallist (map difference coll (rest coll) (nthrest coll 2))]
-;;        reslist (filter (comp not nil?) vallist)]
-    (divide (reduce + vallist) (count vallist))))
 
+;; return a cumulated similarity for the profiles given by coll
+;; which is a list of [t y1 y2] where t is the horizontal time coordinate
+;; and y1, y2 the corresponding y-values for the profiles to be compared
+(defn evaluate-profiles [mpl]
+  (/ (reduce + (map squared-difference mpl)) (count mpl)))
 
-;; do the job trace-segment-wise
-(defn compare-trace-segments [trseg1 trseg2]
-  (let [tvc1 (profiles trseg1)
-        tvc2 (profiles trseg2)
-        [tr1 vp1 cp1] (scale-profiles tvc1)
-        [tr2 vp2 cp2] (scale-profiles tvc2)]
-    [(compare-profiles (merge-profiles vp1 vp2))
-     (compare-profiles (merge-profiles cp1 cp2))]))
-
-
-;; normalize the traces, get velocity and curvature profiles, scale them partitionwise so they can be compared
-;; compare two traces by combining their coordinates
-(defn compare-traces [trace1 trace2]
-  (let [col1 (normalize trace1)
-        col2 (normalize trace2)]
-    (if (or (empty? col1)(empty? col2))
-      0
-      (map compare-trace-segments col1 col2))))
-
-
-
-(defn define [name trace]
-  )
-
-(defn define [name & names]
-  )
-
-(defn analyze [trace]
-  )
