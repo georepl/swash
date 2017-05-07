@@ -242,7 +242,16 @@
 (deftest scaling-functions
   (testing "scale"
     (is (= (scale curve1 25.0 75.0) '([0.0 66.75] [5.357142857142858 75.0] [10.714285714285715 66.0] [14.285714285714286 37.5] [17.857142857142858 26.25]
-                                      [19.642857142857142 11.1] [23.214285714285715 5.25] [25.0 0.003])))))
+                                      [19.642857142857142 11.1] [23.214285714285715 5.25] [25.0 0.003])))
+    (is (= (scale curve1 25.0 75.0 [0 14][0.0004 10])
+           '([0.0 66.75267010680429] [5.357142857142858 75.00300012000481] [10.714285714285715 66.00264010560424] [14.285714285714286 37.50150006000241]
+             [17.857142857142858 26.251050042001683] [19.642857142857142 11.100444017760712] [23.214285714285715 5.2502100084003365] [25.0 0.0030001200048001926])))
+    (is (= (scale curve1 25.0 75.0 [0 0][0.0004 10])
+           '([0 66.75267010680429] [0 75.00300012000481] [0 66.00264010560424] [0 37.50150006000241] [0 26.251050042001683] [0 11.100444017760712] [0 5.2502100084003365] [0 0.0030001200048001926])))
+    (is (= (scale curve1 25.0 75.0 [0 14][10 10])
+           '([0.0 0.0] [5.357142857142858 0] [10.714285714285715 0.0] [14.285714285714286 0] [17.857142857142858 0.0] [19.642857142857142 0.0] [23.214285714285715 0.0] [25.0 0.0])))
+    (is (= (scale curve1 25.0 75.0 [14 14][0.0004 0.0004])
+           '([0 0.0] [0 0] [0 0.0] [0 0] [0 0.0] [0 0.0] [0 0.0] [0 0.0])))))
 
 
 (deftest squared-difference-test
@@ -313,7 +322,24 @@
     (testing "locext"
       (is (= (locext (map #(vector 0 %) coll1))
              '(6.055 nil 9.084 nil nil 3.237 nil nil nil nil nil nil nil 27.654 nil nil nil 5.548 nil nil nil 50.0 nil 39.476 48.966))))
+    (testing "mindist"
+      (is (true? (#'swash/mindist [[5 7 0][3 9 5]])))
+      (is (true? (#'swash/mindist [[5 7 0][5 7 5]])))
+      (is (false? (#'swash/mindist [[5 7 0][3 9 1]]))))
+    (testing "extrema-profile"
+      (is (= (#'swash/extrema-profile '([0 0][3 -2][7 -4][12 -1][13 5][19 6][22 6][27 3][30 0][34 -7][39 0]))
+             '([0 0] nil [7 -4] nil nil nil nil nil nil [34 -7] [39 0])))
+      (is (= (#'swash/extrema-profile '([0 -10][3 -7][7 -3][12 2][13 3][19 9][22 12][27 17][30 20][34 24][39 29]))
+             '([0 -10] nil nil nil nil nil nil nil nil nil [39 29]))))
       ))
+
+(deftest prepare-tracecolls-test
+  (testing "cleanup"
+    (is (= (cleanup 500 '([30 60 500][34 70 501][34 60 503][30 52 508][33 41 509][36 32 510][40 35 520][45 40 530][56 59 546][62 62 550][60 68 560][60 70 600]))
+           '([34 60 3] [36 32 10] [40 35 20] [45 40 30] [56 59 46] [62 62 50] [60 68 60])))
+    (is (= (cleanup 42 '([-25 21 42][-28 22 49][-24 23 54][-22 23 58])) '([-25 21 0][-28 22 7][-24 23 12])))
+    (is (= (cleanup 42 '([-25 21 42][-27 22 47][-27 22 49][-24 23 45][-22 23 58])) '([-25 21 0][-27 22 7][-24 23 3])))
+    (is (= (cleanup 42 '([-25 21 42][-27 22 43][-28 22 43][-22 23 58])) nil))))
 
 (deftest prepare-profiles-test
   (testing "smooth"
@@ -328,15 +354,31 @@
   (let [coll1 '([3 5 nil][5 nil 9][7 7 nil][13 nil 9][14 8 nil][17 nil 16])
         coll2 '([0 1 nil][1 nil 16][4 13 nil][5 nil 8][9 28 nil][12 nil -6])
         coll3 '([0 nil 18][1 4 nil][4 nil 10][5 16 nil][9 nil 0][12 37 nil])]
+    (testing "merge-profiles"
+      (is (= (merge-profiles '([3 5][7 7][14 8]) '([5 9][13 9][17 16])) coll1))
+      (is (= (merge-profiles '([3 5][7 7][13 7][14 8]) '([3 6][5 9][13 9][17 16]))
+             '([3 5 nil] [3 nil 6] [5 nil 9] [7 7 nil] [13 7 nil] [13 nil 9] [14 8 nil] [17 nil 16]))))
+    (testing "extract"
+      (is (= (extract first coll1) '([3 5][7 7][14 8])))
+      (is (= (extract second coll1) '([5 9][13 9][17 16]))))
     (testing "interpolate-merged-profiles"
       (let [ret1 (map swash/interpolate-merged-profiles coll1 (rest coll1)(rest (rest coll1)))]
         (is (= ret1 [[5 6.0 9] [7 7 9.0] [13 7.857142925262451 9] [14 8 10.75]])))
       (let [ret2 (map swash/interpolate-merged-profiles coll2 (rest coll2)(rest (rest coll2)))]
         (is (empty? (filter (partial < 0.001)  (map - (flatten ret2) (flatten [[1 4 16][4 13 10][5 16 8][9 28 0][12 37 -6]]))))))
       (let [ret3 (map swash/interpolate-merged-profiles coll3 (rest coll3)(rest (rest coll3)))]
-        (is (empty? (filter (partial < 0.001)  (map - (flatten ret3) (flatten [[1 4 16][4 13 10][5 16 8][9 28 0][12 37 -6]]))))))
-      )))
+        (is (empty? (filter (partial < 0.001)  (map - (flatten ret3) (flatten [[1 4 16][4 13 10][5 16 8][9 28 0][12 37 -6]])))))))))
 
+
+(deftest evaluate-profiles-test
+  (testing "evaluate-profiles"
+    (is (= (evaluate-profiles '([3 5 8][5 6 9][7 7 9][13 7.5 9][14 8 10.75][17 9 16])) 13.46875))
+        (is (= (evaluate-profiles '([0 5 7][5 9 6][10 7 8][15 6 9][20 8 10.75][25 9 16])) 13.260416666666666))
+        (is (= (evaluate-profiles '([3 5 5][5 6 6][7 7 7][13 9 9][14 8 8][17 16 16])) 0.0))))
+
+(deftest analyze-test
+  (testing "analyze-shapes"
+    (is (= (analyze-shapes trace-Didi1 trace-Didi2) [0.024335098072658472 0.08786646385141933]))))
 
 (defn beautify [x]
   (if (nil? x)
@@ -345,5 +387,4 @@
 
 (defn beautify2 [[x y]]
   [(beautify x)(beautify y)])
-
 

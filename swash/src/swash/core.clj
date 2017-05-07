@@ -127,17 +127,13 @@
   (>= (abs (- t2 t1)) TMIN))
 
 
-(defn- _mindist [[[x1 y1 t1][x2 y2 t2]]]
-  (and (>= (abs (- t2 t1)) TMIN)
-       (>= (+ (- x2 x1)(- y2 y1)) DMIN)))
-
-;; transform the trace collection so all traces' t coordinates start with 0,
+;; transform the trace so the t coordinates start with 0,
 ;; no two trace elements have the same timestamp (guarantee injectivity) and
-;; every trace in the tracecoll has at least three points (minimum for curvature)
+;; the trace has at least three points (minimum for curvature)
 (defn cleanup [t0 coll]
-  (let [col1 (map (fn [[x y t]][x y (- t t0)]) coll)
+  (let [col1 (map (fn [[x y t]](vector x y (- t t0))) coll)
         col2 (map first (filter mindist (map list col1 (rest col1))))]
-    (filter #(> (count %) 2) col2)))
+    (if (> (count col2) 2) col2 nil)))
 
 ;; find the center point of the box around the trace
 (defn box-center [trace]
@@ -202,4 +198,27 @@
 ;; and y1, y2 the corresponding y-values for the profiles to be compared
 (defn evaluate-profiles [mpl]
   (/ (reduce + (map squared-difference mpl)) (count mpl)))
+
+
+(defn analyze-shapes [tr-col1 tr-col2]
+  (let [
+        ;; clean traces from all quasi doubles (i.s. successive points with too small a t-difference)
+        res1 (map (partial cleanup (last (first (first tr-col1)))) tr-col1)
+        res2 (map (partial cleanup (last (first (first tr-col2)))) tr-col2)
+
+        ;; 1. get velocity and curvature profiles
+        ;; 2. filter to smoothen the profiles
+        ;; 3. scale the profiles so they fit in the same box
+        cp1 (scale (smooth (curvature-profile (first res1))) 1 1)
+        cp2 (scale (smooth (curvature-profile (first res2))) 1 1)
+        vp1 (scale (smooth (velocity-profile (first res1))) 1 1)
+        vp2 (scale (smooth (velocity-profile (first res2))) 1 1)
+
+        ;; 1. merge profiles so that there is a y-value for every t in either profile
+        ;; 2. remove points in the merged profile so points from either original profile alternate
+        mpl1 (prune-merged-profiles (merge-profiles vp1 vp2))
+        mpl2 (prune-merged-profiles (merge-profiles cp1 cp2))
+        coll1 (map interpolate-merged-profiles mpl1 (rest mpl1) (rest (rest mpl1)))
+        coll2 (map interpolate-merged-profiles mpl2 (rest mpl2) (rest (rest mpl2)))]
+    (vector (evaluate-profiles coll1) (evaluate-profiles coll2))))
 

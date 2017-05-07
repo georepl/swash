@@ -96,7 +96,7 @@
 
 (defn process-segments [tracecoll]
   (let [t0 (last (first (first tracecoll)))
-        coll (filter (comp not empty?) (map (partial swash/cleanup t0) tracecoll))  ;; filter: there may be empty traces that lead tocrashes!
+        coll (filter (comp not empty?) (map (partial swash/cleanup t0) tracecoll))  ;; filter: there may be empty traces that lead to crashes!
         w (q/width)]
     (if (not (empty? coll))
       (let [vpraw (swash/smooth (swash/velocity-profile (apply concat coll)))
@@ -125,38 +125,16 @@
           :shapes (conj (:shapes state) (:tracecoll state)))))))
 
 
+
 (defn analyze-shapes [state tracecoll]
   (if (empty? (:shapes state))
-      state
-      (let [;; compare the two last traces
-            shapes (reverse (:shapes state))
-            tr-col1 (first shapes)
-            tr-col2 (second shapes)
-;            tr-col1 (first (:shapes state))
-;            tr-col2 (second (:shapes state))
-
-            ;; clean traces from all quasi doubles (i.s. successive points with too small a t-difference)
-            res1 (map (partial swash/cleanup (last (first (first tr-col1)))) tr-col1)
-            res2 (map (partial swash/cleanup (last (first (first tr-col2)))) tr-col2)
-
-            ;; 1. get velocity and curvature profiles
-            ;; 2. filter to smoothen the profiles
-            ;; 3. scale the profiles so they fit in the same box
-            cp1 (swash/scale (swash/smooth (swash/curvature-profile (first res1))) 1 1)
-            cp2 (swash/scale (swash/smooth (swash/curvature-profile (first res2))) 1 1)
-            vp1 (swash/scale (swash/smooth (swash/velocity-profile (first res1))) 1 1)
-            vp2 (swash/scale (swash/smooth (swash/velocity-profile (first res2))) 1 1)
-
-            ;; 1. merge profiles so that there is a y-value for every t in either profile
-            ;; 2. remove points in the merged profile so points from either original profile alternate
-            mpl1 (swash/prune-merged-profiles (swash/merge-profiles vp1 vp2))
-            mpl2 (swash/prune-merged-profiles (swash/merge-profiles cp1 cp2))
-            coll1 (map swash/interpolate-merged-profiles mpl1 (rest mpl1) (rest (rest mpl1)))
-            coll2 (map swash/interpolate-merged-profiles mpl2 (rest mpl2) (rest (rest mpl2)))]
-    (if (and (< (swash/evaluate-profiles coll1) 0.08)
-             (< (swash/evaluate-profiles coll2) 0.06))
-      (assoc state :lights :green)
-      (assoc state :lights :red)))))
+    state
+    (let [;; compare the two last traces
+          shapes (reverse (:shapes state))
+          [val-v val-c] (swash/analyze-shapes (first shapes) (second shapes))]
+      (if (and (< val-v 0.08) (< val-c 0.06))
+        (assoc state :lights :green)
+        (assoc state :lights :red)))))
 
 
 (defn beautify [x]
@@ -223,15 +201,20 @@ cc3 (prn (if (and (< vm 0.08)(< 0.06)) "        =============== TRUE ===========
                    :tr3 (map (fn [[t y]] (vector (+ (* t 2) 500) (- 700 y))) (swash/extract first mpl2))
                    :tr4 (map (fn [[t y]] (vector (+ (* t 2) 500) (- 700 y))) (swash/extract second mpl2))))))
 
+
 (defn load-trace [state]
-  )
+  (let [path "/home/thomas/Projekte/Swash/swashtest/"
+        s (apply str (concat path (:str-temp1 state)(:str-temp2 state)))
+        tracecoll (load-string (apply str (cons \' (slurp s))))]
+    (doseq [trace tracecoll] (draw-trace trace))
+    (assoc state :tracecoll tracecoll :dialog-f nil)))
+
 
 (defn save-trace [state]
-  (let [s (format "%d.trc" (System/currentTimeMillis))]
-(prn "S:" s " TRACE: " (:tracecoll state))
-    (when (not (empty? (:tracecoll state)))
-      (spit s (:tracecoll state)))
-    state))
+  (let [s (apply str (concat (:str-temp1 state)(:str-temp2 state)))]
+    (when (not (or (empty? (first (:shapes state))) (empty? s)))
+      (spit s (first (:shapes state))))
+    (assoc state :dialog-f nil)))
 
 
 ;;========================
@@ -273,6 +256,26 @@ cc3 (prn (if (and (< vm 0.08)(< 0.06)) "        =============== TRUE ===========
     { :x (+ w 320) :y (- h 20) :r 20 }))
 
 
+(defn load-dialog
+  ([state]
+    (if (:dialog-f state)
+      (do (prn "LOAD-DIALOG: " (:filename state)) state)
+      state))
+  ([state done?]
+     (if done?
+       (process (load-dialog (load-trace state)))
+       (load-dialog state))))
+
+(defn save-dialog
+  ([state]
+    (if (:dialog-f state)
+      (do (prn "SAVE-DIALOG: " (:filename state)) state)
+      state))
+  ([state done?]
+     (if done?
+       (save-dialog (save-trace state))
+       (save-dialog state))))
+
 
 ;;========================
 ;; Quil framework
@@ -295,7 +298,7 @@ cc3 (prn (if (and (< vm 0.08)(< 0.06)) "        =============== TRUE ===========
     (draw-coordinates "writing speed (t)" 50 100 (- w 100) 50)
     (draw-coordinates "curvature (t)" 50 200 (- w 100) 50)
     (q/stroke 0 0 0)
-    { :trace '() :shapes [] :tracecoll nil :velocity-profile [] :curvature-profile [] :colour 1 :analyzed false }))
+    { :trace '() :shapes [] :tracecoll nil :velocity-profile [] :curvature-profile [] :colour 1 :analyzed false :str-temp1 [] :str-temp2 [] :filename []}))
 
 (defn setup-state []
   (setup)
@@ -342,7 +345,7 @@ cc3 (prn (if (and (< vm 0.08)(< 0.06)) "        =============== TRUE ===========
 
 (defn mouse-released [state event]
   (if (inbox (:x event)(:y event) (bLoad))
-    (load-trace state)
+    (assoc (load-dialog state) :dialog-f load-dialog)
     (if (inbox (:x event)(:y event) (bSet))
       (process (assoc state :tracecoll (reverse (map reverse (:tracecoll state)))))
       (if (inbox (:x event)(:y event) (bReset))
@@ -352,8 +355,57 @@ cc3 (prn (if (and (< vm 0.08)(< 0.06)) "        =============== TRUE ===========
            (if (inbox (:x event)(:y event) (bTest))
              (testo state)
              (if (inbox (:x event)(:y event) (bSave))
-               (save-trace state)
+               (assoc (save-dialog state) :dialog-f save-dialog)
                (assoc state :trace '() :tracecoll (filter (comp not empty?) (cons (:trace state) (:tracecoll state)))))))))))
+
+
+
+(defn addchr [state chr]
+  (let [new-str1 (conj (vec (:str-temp1 state)) chr)]
+    (assoc state :str-temp1 new-str1
+                 :filename (apply str (concat new-str1 (:str-temp2 state))))))
+
+(defn _key-pressed [state key]
+  (when (:dialog-f state)
+    (case (:key key)
+      :.     (addchr state \.)
+      :-     (addchr state \-)
+      :_     (addchr state \_)
+      :left  (assoc state :str-temp1 (vec (butlast (:str-temp1 state)))
+                          :str-temp2 (vec (concat (str (last (:str-temp1 state)))  (:str-temp2 state))))
+      :right (assoc state :str-temp1 (vec (concat (:str-temp1 state) (str (first (:str-temp2 state)))))
+                          :str-temp2 (vec (rest (:str-temp2 state))))
+             (case (:key-code key)
+               ;; backspace
+               8   (let [new-str (vec (butlast (:str-temp1 state)))]
+                     (assoc state :str-temp1 new-str
+                                :filename (apply str (concat new-str (:str-temp2 state)))))
+               ;; enter
+               10  (assoc ((:dialog-f state) state true) :filename  nil :str-temp1 nil :str-temp2 nil)
+               ;; pos1
+               35  (assoc state :str-temp1 (vec (concat (:str-temp1 state) (:str-temp2 state)))
+                                :str-temp2 []
+                                :filename (apply str (concat (:str-temp1 state) (:str-temp2 state))))
+               ;; end
+               36  (assoc state :str-temp1 []
+                                :str-temp2 (vec (concat (:str-temp1 state) (:str-temp2 state)))
+                                :filename (apply str (concat (:str-temp1 state) (:str-temp2 state))))
+               ;; delete
+               127 (let [new-str (vec (rest (:str-temp2 state)))]
+                     (assoc state :str-temp2 new-str
+                                  :filename (apply str (concat (:str-temp1 state) new-str))))
+               ;; chars
+                   (if (or (< 64 (:key-code key) 91)
+                           (< 47 (:key-code key) 58))
+                     (addchr state (:raw-key key))
+                     state)))))
+;;                     (do (prn "KEY: " key) state)))))
+
+(defn key-pressed [state key]
+  (let [st (_key-pressed state key)]
+;    (prn "STR:" (:filename st) " ============== " (:str-temp1 st) (:str-temp2 st))
+    (save-dialog st)))
+
 
 (defn -main [& args]
   (let [dx 800
@@ -368,4 +420,5 @@ cc3 (prn (if (and (< vm 0.08)(< 0.06)) "        =============== TRUE ===========
       :mouse-dragged mouse-dragged
       :mouse-pressed mouse-pressed
       :mouse-released mouse-released
+      :key-pressed key-pressed
       :middleware [m/fun-mode])))
